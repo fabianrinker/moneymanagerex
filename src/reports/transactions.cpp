@@ -161,6 +161,8 @@ table {
             sortLabel = transaction.CATEGNAME;
         else if (groupBy == mmFilterTransactionsDialog::GROUPBY_TYPE)
             sortLabel = wxGetTranslation(transaction.TRANSCODE);
+        else if (groupBy == mmFilterTransactionsDialog::GROUPBY_TRANSID)
+            sortLabel = wxString::Format(wxT("%i"),transaction.TRANSID);
 
         if (sortLabel != lastSortLabel)
         {
@@ -478,6 +480,9 @@ void mmReportTransactions::Run(wxSharedPtr<mmFilterTransactionsDialog>& dlg)
         break;
     case mmFilterTransactionsDialog::GROUPBY_TYPE:
         std::stable_sort(trans_.begin(), trans_.end(), SorterByTRANSCODE());
+        break;
+    case mmFilterTransactionsDialog::GROUPBY_TRANSID:
+        std::stable_sort(trans_.begin(), trans_.end(), SorterByTRANSID());
         break;
     }
 }

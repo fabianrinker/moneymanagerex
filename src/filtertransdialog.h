@@ -73,7 +73,8 @@ public:
         GROUPBY_ACCOUNT,
         GROUPBY_PAYEE,
         GROUPBY_CATEGORY,
-        GROUPBY_TYPE
+        GROUPBY_TYPE,
+        GROUPBY_TRANSID
     };
     int mmGetGroupBy() const;
 

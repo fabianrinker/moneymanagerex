@@ -59,7 +59,8 @@ static const wxString GROUPBY_OPTIONS[] =
     wxTRANSLATE("Account"),
     wxTRANSLATE("Payee"),
     wxTRANSLATE("Category"),
-    wxTRANSLATE("Type")
+    wxTRANSLATE("Type"),
+    wxTRANSLATE("Transaction ID")
 };
 
 
