@@ -72,4 +72,4 @@ workflows:
   mmex-builds:
     jobs:
       - build-linux
-#      - build-macos
+      - build-macos
