@@ -135,6 +135,7 @@ void mmCheckingPanel::filterTable()
     m_filteredBalance = 0.0;
     
     const wxString RefType = Model_Attachment::reftype_desc(Model_Attachment::TRANSACTION);
+    const wxString splitRefType = Model_Attachment::reftype_desc(Model_Attachment::TRANSACTIONSPLIT);
     Model_CustomField::FIELDTYPE UDFC01_Type = Model_CustomField::getUDFCType(RefType, "UDFC01");
     Model_CustomField::FIELDTYPE UDFC02_Type = Model_CustomField::getUDFCType(RefType, "UDFC02");
     Model_CustomField::FIELDTYPE UDFC03_Type = Model_CustomField::getUDFCType(RefType, "UDFC03");
@@ -158,6 +159,7 @@ void mmCheckingPanel::filterTable()
     const wxString today_date_string = wxDate::Today().FormatISODate();
 
     const auto splits = Model_Splittransaction::instance().get_all();
+    const auto tags = Model_Taglink::instance().get_all(RefType);
     const auto attachments = Model_Attachment::instance().get_all(Model_Attachment::TRANSACTION);
 
     const auto i = (isAllAccounts_ || isTrash_) ? Model_Checking::instance().all() : Model_Account::transaction(this->m_account);
@@ -175,7 +177,7 @@ void mmCheckingPanel::filterTable()
         if (ignore_future) {
             if (tran.TRANSDATE > today_date_string) continue;
         }
-        Model_Checking::Full_Data full_tran(tran, splits);
+        Model_Checking::Full_Data full_tran(tran, splits, tags);
         bool expandSplits = false;
         if (m_transFilterActive)
         { 
@@ -255,6 +257,7 @@ void mmCheckingPanel::filterTable()
             else
             {
                 int splitIndex = 1;
+                wxString tranTagnames = full_tran.TAGNAMES;
                 for (const auto& split : full_tran.m_splits)
                 {
                     full_tran.displayID = (wxString::Format("%i", tran.TRANSID) + "." + wxString::Format("%i", splitIndex++));
@@ -262,12 +265,19 @@ void mmCheckingPanel::filterTable()
                     full_tran.CATEGNAME = Model_Category::full_name(split.CATEGID);
                     full_tran.TRANSAMOUNT = split.SPLITTRANSAMOUNT;
                     full_tran.NOTES = tran.NOTES;
-                    Model_Checking::Data split_tran = full_tran;
-                    if (m_trans_filter_dlg->mmIsRecordMatches<Model_Checking>(split_tran) ||
-                        m_trans_filter_dlg->mmIsSplitMatches<Model_Splittransaction>(split))
+                    full_tran.TAGNAMES = tranTagnames;
+                    Model_Checking::Data full_split = full_tran;
+                    if (m_trans_filter_dlg->mmIsSplitRecordMatches<Model_Splittransaction>(split) ||
+                        m_trans_filter_dlg->mmIsRecordMatches<Model_Checking>(full_split))
                     {
-                        full_tran.AMOUNT = Model_Checking::amount(split_tran, m_AccountID);
+                        full_tran.AMOUNT = Model_Checking::amount(full_split, m_AccountID);
                         full_tran.NOTES.Append((tran.NOTES.IsEmpty() ? "" : " ") + split.NOTES);
+                        wxString tagnames;
+                        for (const auto& tag : Model_Taglink::instance().get(splitRefType,split.SPLITTRANSID))
+                            tagnames.Append(tag.first + " ");
+
+                        if(!tagnames.IsEmpty())
+                            full_tran.TAGNAMES.Append((full_tran.TAGNAMES.IsEmpty() ? "" : ", ") + tagnames.Trim());
                         m_listCtrlAccount->m_trans.push_back(full_tran);
                         if (Model_Checking::status(tran.STATUS) != Model_Checking::VOID_ && tran.DELETEDTIME.IsEmpty())
                             m_filteredBalance += full_tran.AMOUNT;
@@ -420,7 +430,7 @@ void mmCheckingPanel::CreateControls()
     itemPanel12->SetSizer(itemBoxSizer4);
 
     wxBoxSizer* itemButtonsSizer = new wxBoxSizer(wxHORIZONTAL);
-    itemBoxSizer4->Add(itemButtonsSizer, g_flagsBorder1V);
+    itemBoxSizer4->Add(itemButtonsSizer, wxSizerFlags(g_flagsExpandBorder1).Proportion(0));
 
     m_btnDelete = new wxButton(itemPanel12, wxID_REMOVE, _("&Delete "));
     mmToolTip(m_btnDelete, _("Delete selected transaction"));
@@ -470,7 +480,7 @@ void mmCheckingPanel::CreateControls()
         , wxSize(100, m_btnDelete->GetSize().GetHeight())
         , wxTE_NOHIDESEL, wxDefaultValidator);
     searchCtrl->SetDescriptiveText(_("Search"));
-    itemButtonsSizer->Add(searchCtrl, 0, wxCENTER, 1);
+    itemButtonsSizer->Add(searchCtrl, g_flagsExpandBorder1);
     mmToolTip(searchCtrl,
         _("Enter any string to find it in the nearest transaction data") + "\n\n" +
         _("Tips: You can use wildcard characters - question mark (?), asterisk (*) - in your search criteria.") + "\n" +
@@ -494,11 +504,11 @@ void mmCheckingPanel::CreateControls()
 wxString mmCheckingPanel::GetPanelTitle(const Model_Account::Data& account) const
 {
     if (isAllAccounts_)
-        return wxString::Format(_("Full Transactions Report"));
+        return wxString::Format(_("All Transactions"));
     else if (isTrash_)
         return wxString::Format(_("Deleted Transactions"));
     else
-        return wxString::Format(_("Account View : %s"), account.ACCOUNTNAME);
+        return wxString::Format(_("Account View: %s"), account.ACCOUNTNAME);
 }
 
 wxString mmCheckingPanel::BuildPage() const
@@ -754,16 +764,14 @@ void mmCheckingPanel::initFilterSettings()
     case  MENU_VIEW_LASTFINANCIALYEAR:
         date_range = new mmLastFinancialYear(); break;
     case  MENU_VIEW_STATEMENTDATE:
-        if (Model_Account::BoolOf(m_account->STATEMENTLOCKED))
-        {
-            date_range = new mmSpecifiedRange(
-                Model_Account::DateOf(m_account->STATEMENTDATE).Add(wxDateSpan::Day())
-                , wxDateTime::Today()
-            );
+        date_range = new mmSpecifiedRange(
+            Model_Account::DateOf(m_account->STATEMENTDATE).Add(wxDateSpan::Day())
+            , wxDateTime::Today()
+        );
 
-            if (!Option::instance().getIgnoreFutureTransactions())
-                date_range->set_end_date(date_range->future_date());
-        }
+        if (!Option::instance().getIgnoreFutureTransactions())
+            date_range->set_end_date(date_range->future_date());
+        
         break;
     case MENU_VIEW_FILTER_DIALOG:
         m_transFilterActive = true;
@@ -918,10 +926,19 @@ void mmCheckingPanel::DisplayAccountDetails(int accountID)
 
 void mmCheckingPanel::mmPlayTransactionSound()
 {
-    bool play = Model_Setting::instance().GetBoolSetting(INIDB_USE_TRANSACTION_SOUND, true);
+    int play = Model_Setting::instance().GetIntSetting(INIDB_USE_TRANSACTION_SOUND, 0);
     if (play)
     {
-        wxString wav_path = mmex::getPathResource(mmex::TRANS_SOUND);
+        wxString wav_path;
+        switch (play) {
+        case 2:
+            wav_path = mmex::getPathResource(mmex::TRANS_SOUND2);
+            break;
+        default:
+            wav_path = mmex::getPathResource(mmex::TRANS_SOUND1);
+            break;
+        }
+
         wxLogDebug("%s", wav_path);
         wxSound registerSound(wav_path);
 

@@ -129,7 +129,6 @@ wxString mmex::getPathDoc(EDocFile f, bool url)
 {
     if (f < 0 || f >= DOC_FILES_MAX) f = HTML_INDEX;
     static const wxString files[DOC_FILES_MAX] = {
-      "README.TXT",
       "contrib.txt",
       "license.txt",
       "help%sindex.html",
@@ -188,7 +187,8 @@ const wxString mmex::getPathResource(EResFile f)
 
     wxFileName fname = GetResourceDir();
     std::vector<std::pair<int, wxString> > files = {
-        {TRANS_SOUND, "kaching.wav"},
+        {TRANS_SOUND1, "drop.wav"},
+        {TRANS_SOUND2, "cash.wav"},
         {HOME_PAGE_TEMPLATE, "home_page.htt"},
         {MMEX_LOGO, "mmex.svg"},
         {THEMESDIR, "themes"},

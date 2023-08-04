@@ -46,6 +46,7 @@ static const std::map<std::string, std::pair<int, bool>> iconName2enum = {
     { "CATEGORY.svg", { CATEGORY, false } },
     { "PAYEE.svg", { PAYEE, false } },
     { "CURR.svg", { CURR, false } },
+    { "TAG.svg", { TAG, false } },
     { "FILTER.svg", { FILTER, false } }, 
     { "GRM.svg", { GRM, false } },
     { "OPTIONS.svg", { OPTIONS, false } },
@@ -409,7 +410,7 @@ bool checkThemeContents(wxArrayString *filesinTheme)
     {
         wxString realName = (darkFound && darkMode) ? neededFiles[i].AfterLast('-') : neededFiles[i];
         if (wxNOT_FOUND == filesinTheme->Index(realName)) {
-            wxMessageBox(wxString::Format(_("File '%s' missing or invalid in chosen theme '%s'")
+            wxMessageBox(wxString::Format(_("File '%1$s' missing or invalid in chosen theme '%2$s'")
                 , neededFiles[i], Model_Setting::instance().Theme()), _("Warning"), wxOK | wxICON_WARNING);
             success = false;
         }
@@ -420,7 +421,7 @@ bool checkThemeContents(wxArrayString *filesinTheme)
     {
         if (std::get<2>(it.second) && mmThemeMetaString(it.first).IsEmpty())
         {
-            wxMessageBox(wxString::Format(_("Metadata '%s' missing in chosen theme '%s'")
+            wxMessageBox(wxString::Format(_("Metadata '%1$s' missing in chosen theme '%2$s'")
                 , std::get<0>(it.second), Model_Setting::instance().Theme()), _("Warning"), wxOK | wxICON_WARNING);
             success = false;
         }
@@ -455,7 +456,7 @@ bool checkThemeContents(wxArrayString *filesinTheme)
         if (erroredIcons > maxCutOff) {
             missingIcons << " " << _("and more...");
         }
-        wxMessageBox(wxString::Format(_("There are %d missing or invalid icons in chosen theme '%s': %s")
+        wxMessageBox(wxString::Format(_("There are %1$d missing or invalid icons in chosen theme '%2$s': %3$s")
             , erroredIcons, Model_Setting::instance().Theme(), missingIcons), _("Warning"), wxOK | wxICON_WARNING);
     }
     return success;

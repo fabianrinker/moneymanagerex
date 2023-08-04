@@ -135,6 +135,7 @@ billsDepositsListCtrl::billsDepositsListCtrl(mmBillsDepositsPanel* bdp, wxWindow
     m_columns.push_back(PANEL_COLUMN(_("Payee"), wxLIST_AUTOSIZE_USEHEADER, wxLIST_FORMAT_LEFT, true));
     m_columns.push_back(PANEL_COLUMN(_("Status"), wxLIST_AUTOSIZE_USEHEADER, wxLIST_FORMAT_LEFT, true));
     m_columns.push_back(PANEL_COLUMN(_("Category"), wxLIST_AUTOSIZE_USEHEADER, wxLIST_FORMAT_LEFT, true));
+    m_columns.push_back(PANEL_COLUMN(_("Tags"), 200, wxLIST_FORMAT_LEFT, true));
     m_columns.push_back(PANEL_COLUMN(_("Type"), wxLIST_AUTOSIZE_USEHEADER, wxLIST_FORMAT_LEFT, true));
     m_columns.push_back(PANEL_COLUMN(_("Amount"), wxLIST_AUTOSIZE_USEHEADER, wxLIST_FORMAT_RIGHT, true));
     m_columns.push_back(PANEL_COLUMN(_("Frequency"), wxLIST_AUTOSIZE_USEHEADER, wxLIST_FORMAT_LEFT, true));
@@ -195,7 +196,7 @@ mmBillsDepositsPanel::mmBillsDepositsPanel(wxWindow *parent, wxWindowID winid
     m_today = wxDate::Today();
     this->tips_.Add(_("MMEX allows regular payments to be set up as transactions. These transactions can also be regular deposits,"
         " or transfers that will occur at some future time. These transactions act as a reminder that an event is about to occur,"
-        " and appears on the Home Page 14 days before the transaction is due. "));
+        " and appears on the Dashboard 14 days before the transaction is due."));
     this->tips_.Add(_("Tip: These transactions can be set up to activate - allowing the user to adjust any values on the due date."));
 
     Create(parent, winid, pos, size, style, name);
@@ -471,6 +472,8 @@ wxString mmBillsDepositsPanel::getItem(long item, long column)
         return bill.STATUS;
     case COL_CATEGORY:
         return bill.CATEGNAME;
+    case COL_TAGS:
+        return bill.TAGNAMES;
     case COL_TYPE:
         return wxGetTranslation(bill.TRANSCODE);
     case COL_AMOUNT:
@@ -896,7 +899,7 @@ wxListItemAttr* billsDepositsListCtrl::OnGetItemAttr(long item) const
 {
     if (item < 0 || item >= static_cast<int>(m_bdp->bills_.size())) return 0;
 
-    int color_id = m_bdp->bills_[item].FOLLOWUPID;
+    int color_id = m_bdp->bills_[item].COLOR;
 
     static std::map<int, wxSharedPtr<wxListItemAttr> > cache;
     if (color_id > 0)
@@ -938,7 +941,7 @@ void billsDepositsListCtrl::OnSetUserColour(wxCommandEvent& event)
     Model_Billsdeposits::Data* item = Model_Billsdeposits::instance().get(id);
     if (item)
     {
-        item->FOLLOWUPID = user_color_id;
+        item->COLOR = user_color_id;
         Model_Billsdeposits::instance().save(item);
     }
     Model_Billsdeposits::instance().ReleaseSavepoint();

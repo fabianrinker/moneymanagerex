@@ -759,23 +759,6 @@ bool mmCustomData::ValidateCustomValues(int ref_id)
         if (!cb || !cb->GetValue())
             continue;
 
-        const wxString regExStr = Model_CustomField::getRegEx(field.PROPERTIES);
-        if (!regExStr.empty())
-        {
-            const auto& data = GetWidgetData(controlID);
-            wxRegEx regEx(regExStr, wxRE_EXTENDED);
-
-            if (!regEx.Matches(data))
-            {
-                mmErrorDialogs::MessageError(this, wxString::Format(_("Unable to save custom field \"%s\":\nvalue \"%s\" "
-                    "does not match RegEx validation \"%s\"")
-                    , field.DESCRIPTION, data, regExStr)
-                    , _("CustomField validation error"));
-                is_valid = false;
-                continue;
-            }
-        }
-
         if (GetWidgetType(controlID) == Model_CustomField::DECIMAL 
                 || GetWidgetType(controlID) == Model_CustomField::INTEGER)
         {
@@ -789,6 +772,23 @@ bool mmCustomData::ValidateCustomValues(int ref_id)
                                                 , Model_CustomField::getDigitScale(field.PROPERTIES)));
                 else
                     is_valid = false;
+            }
+        }
+
+        const wxString regExStr = Model_CustomField::getRegEx(field.PROPERTIES);
+        if (!regExStr.empty())
+        {
+            const auto& data = GetWidgetData(controlID);
+            wxRegEx regEx(regExStr, wxRE_EXTENDED);
+
+            if (!regEx.Matches(data))
+            {
+                mmErrorDialogs::MessageError(this, wxString::Format(_("Unable to save custom field \"%1$s\":\nvalue \"%2$s\" "
+                    "does not match RegEx validation \"%3$s\"")
+                    , field.DESCRIPTION, data, regExStr)
+                    , _("CustomField validation error"));
+                is_valid = false;
+                continue;
             }
         }
     }

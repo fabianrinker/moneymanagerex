@@ -17,9 +17,9 @@ cmake_minimum_required(VERSION 3.0 FATAL_ERROR)
 # ./resources/mmex.rc
 # ---------------------------------------------------------------------------
 
-set(MMEX_VERSION 1.6.4)
+set(MMEX_VERSION 1.7.0)
 SET(MMEX_VERSION_ALPHA -1)
-SET(MMEX_VERSION_BETA 4)
+SET(MMEX_VERSION_BETA 1)
 SET(MMEX_VERSION_RC -1)
 
 # ---------------------------------------------------------------------------
@@ -123,6 +123,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
                 set(LINUX_DISTRO "${CMAKE_MATCH_1}")
                 set(LINUX_DISTRO_REL ${CMAKE_MATCH_2})
             endif()
+        # Check if cmake is new enough for querying host-specific system information:
+        # https://cmake.org/cmake/help/latest/command/cmake_host_system_information.html
+        elseif(EXISTS /etc/os-release AND ${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.22.0")
+            cmake_host_system_information(RESULT LINUX_DISTRO QUERY DISTRIB_NAME)
+            cmake_host_system_information(RESULT LINUX_DISTRO_REL QUERY DISTRIB_VERSION)
         elseif(EXISTS /etc/arch-release)
             execute_process(COMMAND  uname -r
                 OUTPUT_VARIABLE LINUX_DISTRO_REL
@@ -612,7 +617,8 @@ install(FILES
     resources/sorttable.js
     resources/jquery.min.js
     resources/home_page.htt
-    resources/kaching.wav
+    resources/drop.wav
+    resources/cash.wav
     resources/mmex.png
     resources/mmex.svg
     DESTINATION "${MMEX_RES_DIR}")
@@ -624,15 +630,21 @@ install(FILES ${GRMFILES} DESTINATION ${MMEX_RES_DIR_REPORTS})
 if(LINUX)
     # .desktop File
     install(FILES
-        resources/mmex.desktop
+        resources/dist/linux/share/applications/org.moneymanagerex.MMEX.desktop
         DESTINATION share/applications)
+    install(FILES
+        resources/dist/linux/share/metainfo/org.moneymanagerex.MMEX.metainfo.xml
+        DESTINATION share/metainfo)
+    install(FILES
+        resources/dist/linux/share/mime/packages/org.moneymanagerex.MMEX.mime.xml
+        DESTINATION share/mime/packages)
 endif()
 
 # Icons
 if(LINUX)
     install(FILES
         resources/mmex.svg
-        DESTINATION share/icons/hicolor/scalable/apps)
+        DESTINATION share/icons/hicolor/scalable/apps RENAME org.moneymanagerex.MMEX.svg)
 elseif(APPLE)
     install(FILES
         "${MACOSX_APP_ICON_FILE}"

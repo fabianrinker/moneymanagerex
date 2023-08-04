@@ -1,7 +1,7 @@
 /*******************************************************
 Copyright (C) 2014 Gabriele-V
 Copyright (C) 2015, 2016, 2020, 2022 Nikolay Akimov
-Copyright (C) 2022 Mark Whalley (mark@ipx.co.uk)
+Copyright (C) 2022, 2023 Mark Whalley (mark@ipx.co.uk)
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -23,16 +23,19 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #include "images_list.h"
 #include "mmex.h"
 #include "paths.h"
+#include "tagdialog.h"
 #include "util.h"
 
 #include "model/Model_Account.h"
 #include "model/Model_Setting.h"
 
+#include <wx/renderer.h>
 #include <wx/richtooltip.h>
 
 //------- Pop-up calendar, currently only used for MacOS only
 // See: https://github.com/moneymanagerex/moneymanagerex/issues/3139
 
+#include "wx/dcbuffer.h"
 #include "wx/popupwin.h"
 #include "wx/spinctrl.h"
 
@@ -127,14 +130,16 @@ void mmComboBox::OnSetFocus(wxFocusEvent& event)
        }
        auto_complete.Sort(CaseInsensitiveLocaleCmp);
 
-       this->AutoComplete(auto_complete);
-       if (!auto_complete.empty()) {
-           this->Insert(auto_complete, 0);
-       }
-       if (auto_complete.GetCount() == 1) {
-           Select(0);
-       }
-        is_initialized_ = true;
+        this->AutoComplete(auto_complete);
+        if (!auto_complete.empty()) {
+            wxString selection = GetValue();
+            Set(auto_complete);
+            if (!selection.IsEmpty()) SetStringSelection(selection);
+        }
+        if (auto_complete.GetCount() == 1) {
+            Select(0);
+        }
+        is_initialized_ = true;   
     }
     event.Skip();
 }
@@ -173,7 +178,7 @@ void mmComboBox::OnTextUpdated(wxCommandEvent& event)
 #if defined (__WXMAC__)
     // Filtering the combobox as the user types because on Mac autocomplete function doesn't work
     // PLEASE DO NOT REMOVE!!
-    if (typedText.IsEmpty() || (this->GetSelection() == -1))
+    if ((is_initialized_) && (typedText.IsEmpty() || (this->GetSelection() == -1)))
     {
         this->Clear();
 
@@ -181,7 +186,7 @@ void mmComboBox::OnTextUpdated(wxCommandEvent& event)
         {
             if (entry.first.Lower().Matches(typedText.Lower().Prepend("*").Append("*")))
                 this->Append(entry.first);
-        }
+            }
 
         this->ChangeValue(typedText);
         this->SetInsertionPointEnd();
@@ -271,6 +276,13 @@ mmComboBoxAccount::mmComboBoxAccount(wxWindow* parent, wxWindowID id
     , accountID_(accountID)
 {
     init();
+    wxArrayString choices;
+    for (const auto& item : all_elements_) {
+        choices.Add(item.first);
+    }
+    parent->SetEvtHandlerEnabled(false);
+    Set(choices);
+    parent->SetEvtHandlerEnabled(true);
 }
 
 /* --------------------------------------------------------- */
@@ -291,6 +303,13 @@ mmComboBoxPayee::mmComboBoxPayee(wxWindow* parent, wxWindowID id
     , payeeID_(payeeID)
 {
     init();
+    wxArrayString choices;
+    for (const auto& item : all_elements_) {
+        choices.Add(item.first);
+    }
+    parent->SetEvtHandlerEnabled(false);
+    Set(choices);
+    parent->SetEvtHandlerEnabled(true);
 }
 
 void mmComboBoxUsedPayee::init()
@@ -302,6 +321,13 @@ mmComboBoxUsedPayee::mmComboBoxUsedPayee(wxWindow* parent, wxWindowID id, wxSize
     : mmComboBox(parent, id, size)
 {
     init();
+    wxArrayString choices;
+    for (const auto& item : all_elements_) {
+        choices.Add(item.first);
+    }
+    parent->SetEvtHandlerEnabled(false);
+    Set(choices);
+    parent->SetEvtHandlerEnabled(true);
 }
 
 /* --------------------------------------------------------- */
@@ -315,6 +341,13 @@ mmComboBoxCurrency::mmComboBoxCurrency(wxWindow* parent, wxWindowID id, wxSize s
     : mmComboBox(parent, id, size)
 {
     init();
+    wxArrayString choices;
+    for (const auto& item : all_elements_) {
+        choices.Add(item.first);
+    }
+    parent->SetEvtHandlerEnabled(false);
+    Set(choices);
+    parent->SetEvtHandlerEnabled(true);
 }
 
 /* --------------------------------------------------------- */
@@ -325,7 +358,7 @@ void mmComboBoxCategory::init()
     all_categories_ = Model_Category::instance().all_categories(excludeHidden_);
     if (catID_ > -1)
         all_categories_.insert(std::make_pair(Model_Category::full_name(catID_)
-                                    , catID_));
+            , catID_));
     for (const auto& item : all_categories_)
     {
         all_elements_[item.first] = i++;
@@ -341,6 +374,13 @@ mmComboBoxCategory::mmComboBoxCategory(wxWindow* parent, wxWindowID id
     , catID_(catID)
 {
     init();
+    wxArrayString choices;
+    for (const auto& item : all_elements_) {
+        choices.Add(item.first);
+    }
+    parent->SetEvtHandlerEnabled(false);
+    Set(choices);
+    parent->SetEvtHandlerEnabled(true);
 }
 
 int mmComboBoxCategory::mmGetCategoryId() const
@@ -506,6 +546,7 @@ void mmColorButton::OnMenuSelected(wxCommandEvent& event)
 {
     m_color_value = event.GetId() - wxID_HIGHEST;
     SetBackgroundColour(getUDColour(m_color_value));
+    SetForegroundColour(*bestFontColour(getUDColour(m_color_value)));
     if (GetSize().GetX() > 40)
     {
         if (m_color_value <= 0) {
@@ -529,6 +570,7 @@ void mmColorButton::OnColourButton(wxCommandEvent& event)
         menuItem = new wxMenuItem(&mainMenu, wxID_HIGHEST + i, wxString::Format(_("Color #%i"), i));
 #ifdef __WXMSW__
         menuItem->SetBackgroundColour(getUDColour(i)); //only available for the wxMSW port.
+        menuItem->SetTextColour(*bestFontColour(getUDColour(i)));
 #endif
         wxBitmap bitmap(mmBitmapBundle(png::EMPTY, mmBitmapButtonSize).GetDefaultSize());
         wxMemoryDC memoryDC(bitmap);
@@ -880,4 +922,436 @@ mmSingleChoiceDialog::mmSingleChoiceDialog(wxWindow* parent, const wxString& mes
     wxButton* ca = static_cast<wxButton*>(FindWindow(wxID_CANCEL));
     if (ca) ca->SetLabel(wxGetTranslation(g_CancelLabel));
     Fit();
+}
+
+//------------
+
+mmTagTextCtrl::mmTagTextCtrl(wxWindow* parent, wxWindowID id,
+    bool operatorAllowed, const wxPoint& pos, const wxSize& size, long style)
+    : wxPanel(), operatorAllowed_(operatorAllowed)
+{
+    style |= wxBORDER_NONE;
+    Create(parent, id, pos, size, style);
+    SetFont(parent->GetFont());
+    SetBackgroundColour(wxSystemSettings::GetColour(wxSYS_COLOUR_LISTBOX));
+    wxBoxSizer* panel_sizer = new wxBoxSizer(wxHORIZONTAL);
+    wxBoxSizer* v_sizer = new wxBoxSizer(wxVERTICAL);
+    wxBoxSizer* h_sizer = new wxBoxSizer(wxHORIZONTAL);
+    textCtrl_ = new wxStyledTextCtrl(this, wxID_DEFAULT, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+
+    // Set options for the text ctrl
+    textCtrl_->SetLexer(wxSTC_LEX_NULL);
+    textCtrl_->SetWrapMode(wxSTC_WRAP_NONE);
+    textCtrl_->SetMarginWidth(1, 0);
+    textCtrl_->SetMarginSensitive(1, false);
+    textCtrl_->SetUseVerticalScrollBar(false);
+    textCtrl_->SetUseHorizontalScrollBar(false);
+    textCtrl_->AutoCompSetIgnoreCase(true);
+    textCtrl_->AutoCompSetCancelAtStart(true);
+    textCtrl_->AutoCompSetAutoHide(false);
+    textCtrl_->StyleSetFont(1, parent->GetFont());
+    textCtrl_->StyleSetBackground(1, wxColour(186, 226, 185));
+    textCtrl_->StyleSetForeground(1, *wxBLACK);
+    textCtrl_->StyleSetFont(0, parent->GetFont());
+    textCtrl_->StyleSetBackground(0, wxSystemSettings::GetColour(wxSYS_COLOUR_LISTBOX));
+    textCtrl_->StyleSetForeground(0, wxSystemSettings::GetColour(wxSYS_COLOUR_LISTBOXTEXT));
+    textCtrl_->SetCaretForeground(wxSystemSettings::GetColour(wxSYS_COLOUR_LISTBOXTEXT));
+    textCtrl_->SetMaxClientSize(wxSize(-1, textCtrl_->TextHeight(0)));
+    textCtrl_->SetWordChars("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.,;:!?'\"()[]{}<>/\\|-_=+*&^%@#$~");
+
+    // Text ctrl event handlers
+    textCtrl_->Bind(wxEVT_CHAR, &mmTagTextCtrl::OnTextChanged, this);
+    textCtrl_->Bind(wxEVT_STC_CLIPBOARD_PASTE, &mmTagTextCtrl::OnPaste, this);
+    textCtrl_->Bind(wxEVT_PAINT, &mmTagTextCtrl::OnPaint, this);
+    textCtrl_->Bind(wxEVT_KILL_FOCUS, &mmTagTextCtrl::OnKillFocus, this);
+    textCtrl_->Bind(wxEVT_CHAR_HOOK, &mmTagTextCtrl::OnKeyPressed, this);
+    textCtrl_->Bind(wxEVT_STC_ZOOM, [this](wxStyledTextEvent& event) {
+        // Disable zoom
+        textCtrl_->SetEvtHandlerEnabled(false);
+        textCtrl_->SetZoom(0);
+        textCtrl_->SetEvtHandlerEnabled(true);
+    });
+    // Paint base text control
+    Bind(wxEVT_PAINT, [this](wxPaintEvent& event) {
+        wxWindowDC dc(this);
+        wxRendererNative::Get().DrawTextCtrl(this, dc, GetClientRect());
+    });
+
+    h_sizer->Add(textCtrl_, 1, wxALIGN_CENTER_VERTICAL | wxLEFT, 2);
+
+    // Dropdown button
+    int panelHeight = textCtrl_->TextHeight(0) + 8;
+    btn_dropdown_ = new wxBitmapButton(this, wxID_ANY, mmBitmapBundle(png::DOWNARROW, mmBitmapButtonSize));
+    btn_dropdown_->Bind(wxEVT_BUTTON, &mmTagTextCtrl::OnDropDown, this);
+
+    v_sizer->Add(h_sizer, 1, wxEXPAND, 0);
+    panel_sizer->Add(v_sizer, 1, wxEXPAND, 0);
+    panel_sizer->Add(btn_dropdown_, 0, wxEXPAND | wxALL, 0);
+
+    // Popup window
+    popupWindow_ = new wxPopupTransientWindow(this, wxPU_CONTAINS_CONTROLS | wxBORDER_SIMPLE);
+    wxScrolledWindow* scrolledWindow = new wxScrolledWindow(popupWindow_);
+    tagCheckListBox_ = new wxCheckListBox(scrolledWindow, wxID_ANY, wxDefaultPosition, wxDefaultSize, {}, wxLB_SORT);
+    tagCheckListBox_->SetFont(GetFont());
+    tagCheckListBox_->Bind(wxEVT_CHECKLISTBOX, &mmTagTextCtrl::OnPopupCheckboxSelected, this);
+
+    wxBoxSizer* sw_sizer = new wxBoxSizer(wxVERTICAL);
+    sw_sizer->Add(tagCheckListBox_, 1, wxEXPAND);
+    scrolledWindow->SetSizer(sw_sizer);
+    init();
+    scrolledWindow->Fit();
+    sw_sizer->Fit(popupWindow_);
+
+    SetSizer(panel_sizer);
+    SetSizeHints(-1, panelHeight, -1, panelHeight);
+    Layout();
+}
+
+void mmTagTextCtrl::OnDropDown(wxCommandEvent& event)
+{
+    Validate();
+    wxPoint pos = ClientToScreen(textCtrl_->GetPosition());
+    pos.y += textCtrl_->GetSize().GetHeight() + 3;
+    pos.x -= 3;
+    popupWindow_->Position(pos, wxSize(0, 0));
+    popupWindow_->SetSize(GetSize().GetWidth(), -1);
+    tagCheckListBox_->GetParent()->SetSize(popupWindow_->GetSize());
+
+    for (unsigned int i = 0; i < tagCheckListBox_->GetCount(); i++)
+    {
+        if (tags_.find(tagCheckListBox_->GetString(i)) != tags_.end())
+            tagCheckListBox_->Check(i);
+        else
+            tagCheckListBox_->Check(i, false);
+    }
+
+    popupWindow_->Popup();
+    tagCheckListBox_->SetFocus();
+}
+
+void mmTagTextCtrl::OnKeyPressed(wxKeyEvent& event)
+{
+    int keyCode = event.GetKeyCode();
+    if (keyCode == WXK_RETURN || keyCode == WXK_NUMPAD_ENTER)
+    {
+        int ip = textCtrl_->GetInsertionPoint();
+        if (textCtrl_->GetText().IsEmpty() || textCtrl_->GetTextRange(ip - 1, ip) == " ")
+        {
+            mmTagDialog dlg(this, true, parseTags(textCtrl_->GetText()));
+            dlg.ShowModal();
+            wxString selection;
+            for (const auto& tag : dlg.getSelectedTags())
+                selection.Append(tag + " ");
+            textCtrl_->SetText(selection);
+            textCtrl_->GotoPos(textCtrl_->GetLastPosition());
+            if (dlg.getRefreshRequested())
+                init();
+        }
+        else if (textCtrl_->AutoCompActive())
+        {
+            textCtrl_->AutoCompComplete();
+        }
+
+        Validate();
+        return;
+    }
+    else if (keyCode == WXK_TAB && !event.AltDown())
+    {
+        bool prev = event.ShiftDown();
+        wxWindow* next_control = prev ? GetPrevSibling() : GetNextSibling();
+        while (next_control && !next_control->IsFocusable())
+            next_control = prev ? next_control->GetPrevSibling() : next_control->GetNextSibling();
+        if (next_control)
+            next_control->SetFocus();
+        return;
+    }
+    else if (keyCode == WXK_SPACE)
+    {
+        textCtrl_->AutoCompCancel();
+        textCtrl_->InsertText(textCtrl_->GetInsertionPoint(), " ");
+        Validate();
+        return;
+    }
+    event.Skip();
+}
+
+void mmTagTextCtrl::init()
+{
+    // Initialize the tag map and dropdown checkboxes
+    tag_map_.clear();
+    tagCheckListBox_->Clear();
+    for (const auto& tag : Model_Tag::instance().all(DB_Table_TAG_V1::COL_TAGNAME))
+    {
+        tag_map_[tag.TAGNAME] = tag.TAGID;
+        tagCheckListBox_->Append(tag.TAGNAME);
+    }
+
+    tagCheckListBox_->Fit();
+}
+
+void mmTagTextCtrl::OnTextChanged(wxKeyEvent& event)
+{
+    int keyCode = event.GetUnicodeKey();
+    if (keyCode > 32 && keyCode < 127)
+    {
+
+        int ip = textCtrl_->GetInsertionPoint();
+        int anchor = textCtrl_->GetAnchor();
+        int tag_start = textCtrl_->WordStartPosition(std::min(anchor, ip), true);
+        int tag_end = textCtrl_->WordEndPosition(std::max(anchor, ip), true);
+
+        // Show autocomplete
+        wxString pattern = textCtrl_->GetText().Mid(tag_start, std::min(ip, anchor) - tag_start).Append(event.GetUnicodeKey());
+        autocomplete_string_.Clear();
+        for (const auto& tag : tag_map_)
+        {
+            if (tag.first.Lower().Matches(pattern.Lower().Prepend("*").Append("*")))
+                autocomplete_string_.Append(tag.first + " ");
+        }
+        if (!autocomplete_string_.IsEmpty())
+        {
+            textCtrl_->AutoCompShow(tag_end - tag_start, autocomplete_string_);
+        }
+        else
+            textCtrl_->AutoCompCancel();
+    }
+    event.Skip();
+}
+
+void mmTagTextCtrl::OnPopupCheckboxSelected(wxCommandEvent& event)
+{
+    // When the user clicks in item in the checkbox update the textCtrl
+    wxString selectedText = event.GetString();
+    // If they checked a box, append to the string
+    if (tagCheckListBox_->IsChecked(event.GetSelection()))
+        textCtrl_->SetText(textCtrl_->GetText().Trim() + " " + selectedText +  " ");
+    else
+    {
+        // If they unchecked a box, remove the tag from the string.
+        int pos = 0;
+        while (pos <= textCtrl_->GetLastPosition())
+        {
+            pos = textCtrl_->FindText(pos, textCtrl_->GetLastPosition(), selectedText);
+
+            if (pos == wxNOT_FOUND)
+                break;
+
+            pos = textCtrl_->WordStartPosition(pos, true);
+            int end = textCtrl_->WordEndPosition(pos, true);
+            if (textCtrl_->GetTextRange(pos, end) == selectedText)
+            {
+                textCtrl_->Remove(pos, end);
+                break;
+            }
+            pos = end + 1;
+        }
+    }
+    Validate();
+}
+
+void mmTagTextCtrl::OnPaste(wxStyledTextEvent& event)
+{
+    wxString currText = textCtrl_->GetText();
+    Validate(currText.insert(textCtrl_->GetInsertionPoint(), event.GetString()));
+    event.SetString("");
+}
+
+void mmTagTextCtrl::OnKillFocus(wxFocusEvent& event)
+{
+    textCtrl_->AutoCompCancel();
+    // Remove any non-tags
+    Validate();
+    wxString tagString;
+    wxArrayString tags = parseTags(textCtrl_->GetText());
+    for (const auto& tag : tags)
+        if (tags_.find(tag) != tags_.end())
+            tagString.Append(tag + " ");
+
+    textCtrl_->SetText(tagString.Trim());
+    event.Skip();
+}
+
+bool mmTagTextCtrl::Enable(bool enable)
+{
+    if (enable == textCtrl_->IsEnabled())
+        return false;
+
+    textCtrl_->Enable(enable);
+    btn_dropdown_->Enable(enable);
+
+    if (enable)
+    {
+        textCtrl_->StyleSetBackground(wxSTC_STYLE_DEFAULT, wxSystemSettings::GetColour(wxSYS_COLOUR_LISTBOX));
+        SetBackgroundColour(wxSystemSettings::GetColour(wxSYS_COLOUR_LISTBOX));
+    }
+    else
+    {
+        textCtrl_->StyleSetBackground(wxSTC_STYLE_DEFAULT, wxSystemSettings::GetColour(wxSYS_COLOUR_3DFACE));
+        SetBackgroundColour(wxSystemSettings::GetColour(wxSYS_COLOUR_3DFACE));
+    }
+    return true;
+}
+
+void mmTagTextCtrl::OnPaint(wxPaintEvent& event)
+{
+    int end = textCtrl_->GetTextLength();
+    int position = 0;
+
+    // Reset the text style
+    textCtrl_->ClearDocumentStyle();
+
+    while (position < end)
+    {
+        // Find start and end of word
+        int wordStart = textCtrl_->WordStartPosition(position, true);
+        int wordEnd = textCtrl_->WordEndPosition(position, true);
+        wxString word = textCtrl_->GetTextRange(wordStart, wordEnd);
+
+        auto it = tag_map_.find(word);
+        // If the word is a valid tag, color it
+        if (it != tag_map_.end())
+        {
+            textCtrl_->StartStyling(wordStart);
+            textCtrl_->SetStyling(wordEnd - wordStart, 1);
+        }
+        
+        position = wordEnd + 1;
+    }
+
+    // paint a TextCtrl over the background
+    wxWindowDC dc(this);
+    wxRendererNative::Get().DrawTextCtrl(this, dc, GetClientRect());
+    // repaint the button over the TextCtrl
+    btn_dropdown_->Refresh();
+
+    event.Skip();
+}
+
+/* Validates all tags passed in tagText, or the contents of the text control if tagText is blank */
+bool mmTagTextCtrl::Validate(const wxString& tagText)
+{
+    // Clear stored tags
+    tags_.clear();
+
+    int ip = textCtrl_->GetInsertionPoint();
+
+    // If we are passed a string validate it, otherwise validate the text control contents
+    wxString tags_in = tagText;
+    if (tags_in.IsEmpty())
+        tags_in = textCtrl_->GetText();
+
+    if (tags_in.IsEmpty()) return true;
+
+    textCtrl_->SetEvtHandlerEnabled(false);
+    wxString tags_out;
+    bool newTagCreated = false;
+    bool is_valid = true;
+    // parse the tags and prompt to create any which don't exist
+    for (const auto& tag : parseTags(tags_in))
+    {
+        // ignore search operators
+        if (tag == "&" || tag == "|")
+        {
+            tags_out.Append(tag + " ");
+            continue;
+        }
+
+        if (tag_map_.find(tag) == tag_map_.end())
+        {
+            // Prompt user to create a new tag
+            if (wxMessageDialog(nullptr, wxString::Format(_("Create new tag '%s'?"), tag), _("New tag entered"), wxYES_NO).ShowModal() == wxID_YES)
+            {
+                newTagCreated = true;
+                Model_Tag::Data* newTag = Model_Tag::instance().create();
+                newTag->TAGNAME = tag;
+                newTag->ACTIVE = 1;
+                Model_Tag::instance().save(newTag);
+                // Save the new tag to reference
+                tag_map_[tag] = newTag->TAGID;
+                tagCheckListBox_->Append(tag);
+            }
+            else
+            {
+                is_valid = false;
+                continue;
+            }
+        }
+
+        tags_[tag] = tag_map_[tag];
+        tags_out.Append(tag + " ");
+    }
+
+    // Replace tags with case-corrected versions and remove duplicates
+    textCtrl_->SetText(tags_out);
+    textCtrl_->GotoPos(textCtrl_->WordEndPosition(ip, true) + 1);
+    textCtrl_->SetEvtHandlerEnabled(true);
+    return is_valid;
+}
+
+/* Return a list of tag IDs contained in the control */
+const wxArrayInt mmTagTextCtrl::GetTagIDs() const
+{
+    wxArrayInt tags_out;
+    for (const auto& tag : tags_)
+        tags_out.Add(tag.second);
+
+    return tags_out;
+}
+
+wxArrayString mmTagTextCtrl::parseTags(const wxString& tagString)
+{
+    wxStringTokenizer tokenizer = wxStringTokenizer(tagString, " ");
+    wxArrayString tags;
+    while (tokenizer.HasMoreTokens())
+    {
+        wxString token = tokenizer.GetNextToken();
+
+
+        // ignore search operators
+        if (token == "&" || token == "|")
+        {
+            if (operatorAllowed_) tags.Add(token);
+            continue;
+        }
+
+        bool tagUsed = false;
+        // if the tag has already been entered, skip it to avoid duplicates
+        for (const auto& tag : tags)
+            if (tag.IsSameAs(token, false))
+            {
+                tagUsed = true;
+                break;
+            }
+
+        if (tagUsed) continue;
+
+        auto it = tag_map_.find(token);
+        if (it != tag_map_.end())
+            // case correction for existing tag
+            tags.Add((*it).first);
+        else
+            tags.Add(token);
+    }
+
+    return tags;
+}
+
+void mmTagTextCtrl::SetTags(const wxArrayInt& tagIds)
+{
+    // Save the tag IDs and tag names
+    tags_.clear();
+    for (const auto& tagId : tagIds)
+        for (const auto& tag : tag_map_)
+            if (tag.second == tagId)
+            {
+                tags_[tag.first] = tagId;
+                break;
+            }
+
+    // Set the text of the control (sorted)
+    wxString tagString;
+    for (const auto& tag : tags_)
+        tagString.Append(tag.first + " ");
+
+    textCtrl_->SetText(tagString);
 }

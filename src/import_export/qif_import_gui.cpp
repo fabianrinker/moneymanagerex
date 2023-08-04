@@ -789,7 +789,7 @@ void mmQIFImportDialog::refreshTabs(int tabs)
                 if (std::get<2>(m_QIFpayeeNames[payee]) == wxEmptyString)
                     data.push_back(wxVariant(_("OK")));
                 else
-                    data.push_back(wxVariant(wxString::Format(_("Matched to %s by pattern %s"),
+                    data.push_back(wxVariant(wxString::Format(_("Matched to %1$s by pattern %2$s"),
                         std::get<1>(m_QIFpayeeNames[payee]),
                         std::get<2>(m_QIFpayeeNames[payee])
                     )));
@@ -1038,7 +1038,7 @@ void mmQIFImportDialog::OnOk(wxCommandEvent& WXUNUSED(event))
     }
 
     wxString sMsg;
-    wxMessageDialog msgDlg(this, _("Do you want to import all transaction ?")
+    wxMessageDialog msgDlg(this, _("Do you want to import all transaction?")
         + "\n" + _("All missing account, payees and categories will be created.")
         , _("Confirm Import")
         , wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION);
@@ -1077,7 +1077,7 @@ void mmQIFImportDialog::OnOk(wxCommandEvent& WXUNUSED(event))
             if (count % 100 == 0 || count == nTransactions)
             {
                 if (!progressDlg.Update(count
-                    , wxString::Format(_("Importing transaction %i of %i"), count, nTransactions))) // if cancel clicked
+                    , wxString::Format(_("Importing transaction %1$i of %2$i"), count, nTransactions))) // if cancel clicked
                     break; // abort processing
             }
             //
@@ -1258,7 +1258,7 @@ bool mmQIFImportDialog::completeTransaction(/*in*/ const std::unordered_map <int
                 trx->PAYEEID = std::get<0>(m_QIFpayeeNames[payee_name]);
                 // NOTES haven't been filled yet, so we can just direct assign match details if necessary
                 if (payeeMatchAddNotes_->IsChecked() && !std::get<2>(m_QIFpayeeNames[payee_name]).IsEmpty()) {
-                    trx->NOTES =  wxString::Format(_("%s matched by %s"), payee_name, std::get<2>(m_QIFpayeeNames[payee_name]));
+                    trx->NOTES =  wxString::Format(_("%1$s matched by %2$s"), payee_name, std::get<2>(m_QIFpayeeNames[payee_name]));
                 }
             } else trx->PAYEEID = -1;
         }
@@ -1325,9 +1325,9 @@ bool mmQIFImportDialog::completeTransaction(/*in*/ const std::unordered_map <int
     trx->STATUS = status;
 
     int color_id = mmColorBtn_->GetColorId();
-    trx->FOLLOWUPID = -1;
+    trx->COLOR = -1;
     if (colorCheckBox_->IsChecked() && color_id > 0 && color_id < 8)
-        trx->FOLLOWUPID = color_id;
+        trx->COLOR = color_id;
 
     const wxString value = mmTrimAmount(t.find(Amount) != t.end() ? t[Amount] : "", decimal_, ".");
     if (value.empty())

@@ -507,7 +507,7 @@ const std::map<wxString, wxString> &date_formats_regex()
     const wxString tail = "($|[^0-9])+";
     const wxString head = "^";
 
-    for (const auto entry : g_date_formats_map())
+    for (const auto &entry : g_date_formats_map())
     {
         wxString regexp = entry.first;
         regexp.Replace(".", R"([.])");
@@ -551,6 +551,7 @@ const std::vector<std::pair<wxString, wxString> > g_date_formats_map()
         "%d %Mon %Y",
         "%d %Mon %y",
         "%d-%Mon-%Y",
+        "%d-%Mon-%y",
         "%d %Mon'%y",
         "%d %m %y",
         "%d %m %Y",
@@ -824,7 +825,7 @@ bool get_yahoo_prices(std::map<wxString, double>& symbols
     const auto URL = wxString::Format(mmex::weblink::YahooQuotes, buffer);
 
     wxString json_data;
-    auto err_code = http_get_data(URL, json_data);
+    auto err_code = getYahooFinanceQuotes(URL, json_data);
     if (err_code != CURLE_OK)
     {
         output = json_data;
@@ -843,83 +844,99 @@ bool get_yahoo_prices(std::map<wxString, double>& symbols
 
     if (json_doc.HasMember("finance") && json_doc["finance"].IsObject()) {
         Value e = json_doc["finance"].GetObject();
-        if (e.HasMember("error") && e["error"].IsObject()) {
-            Value err = e["error"].GetObject();
-            if (err.HasMember("description") && err["description"].IsString()) {
-                output = wxString::FromUTF8(err["description"].GetString());
-                return false;
+        if (e.HasMember("error")) {
+            if (e["error"].IsObject()) {
+                Value err = e["error"].GetObject();
+                if (err.HasMember("description") && err["description"].IsString()) {
+                    output = wxString::FromUTF8(err["description"].GetString());
+                    return false;
+                }
             }
         }
     }
 
+    /*{"quoteResponse":{"result":[{"currency":"USD","regularMarketPrice":173.57,"shortName":"Apple Inc.","regularMarketTime":1683316804,"symbol":"AAPL"}],"error":null}}*/
 
-    Value r = json_doc["quoteResponse"].GetObject();
-    Value e = r["result"].GetArray();
+    if (json_doc.HasMember("quoteResponse") && json_doc["quoteResponse"].IsObject()) {
+        Value r = json_doc["quoteResponse"].GetObject();
+        if (r.HasMember("result") && r["result"].IsArray()) {
+            Value e = r["result"].GetArray();
 
-    if (e.Empty()) {
-        output = _("Nothing to update");
-        return false;
-    }
-
-    if (type == yahoo_price_type::FIAT)
-    {
-        for (rapidjson::SizeType i = 0; i < e.Size(); i++)
-        {
-            if (!e[i].IsObject()) continue;
-            Value v = e[i].GetObject();
-
-            if (!v.HasMember("symbol") || !v["symbol"].IsString())
-                continue;
-            auto currency_symbol = wxString::FromUTF8(v["symbol"].GetString());
-
-            double price = 0.0;
-            wxRegEx pattern("^([A-Z]{3})[A-Z]{3}=X$");
-            if (pattern.Matches(currency_symbol))
-            {
-                if (!v.HasMember("regularMarketPrice") || !v["regularMarketPrice"].IsFloat())
-                    continue;
-                price = v["regularMarketPrice"].GetFloat();
-                currency_symbol = pattern.GetMatch(currency_symbol, 1);
-            }
-            wxRegEx crypto_pattern("^([A-Z]{3,})-[A-Z]{3}$");
-            if (crypto_pattern.Matches(currency_symbol))
-            {
-                if (!v.HasMember("regularMarketPrice") || !v["regularMarketPrice"].IsFloat())
-                    continue;
-                price = v["regularMarketPrice"].GetFloat();
-                currency_symbol = crypto_pattern.GetMatch(currency_symbol, 1);
+            if (e.Empty()) {
+                output = _("Nothing to update");
+                return false;
             }
 
-            if (currency_symbol == base_currency_symbol)
-                conversion_factor = price;
+            if (type == yahoo_price_type::FIAT)
+            {
+                for (rapidjson::SizeType i = 0; i < e.Size(); i++)
+                {
+                    if (!e[i].IsObject()) continue;
+                    Value v = e[i].GetObject();
+
+                    if (!v.HasMember("symbol") || !v["symbol"].IsString())
+                        continue;
+                    auto currency_symbol = wxString::FromUTF8(v["symbol"].GetString());
+
+                    double price = 0.0;
+                    wxRegEx pattern("^([A-Z]{3})[A-Z]{3}=X$");
+                    if (pattern.Matches(currency_symbol))
+                    {
+                        if (!v.HasMember("regularMarketPrice") || !v["regularMarketPrice"].IsFloat())
+                            continue;
+                        price = v["regularMarketPrice"].GetFloat();
+                        currency_symbol = pattern.GetMatch(currency_symbol, 1);
+                    }
+                    wxRegEx crypto_pattern("^([A-Z]{3,})-[A-Z]{3}$");
+                    if (crypto_pattern.Matches(currency_symbol))
+                    {
+                        if (!v.HasMember("regularMarketPrice") || !v["regularMarketPrice"].IsFloat())
+                            continue;
+                        price = v["regularMarketPrice"].GetFloat();
+                        currency_symbol = crypto_pattern.GetMatch(currency_symbol, 1);
+                    }
+
+                    if (currency_symbol == base_currency_symbol)
+                        conversion_factor = price;
+                    else
+                        out[currency_symbol] = (price <= 0.0 ? 0.0 : price);
+
+                }
+            }
             else
-                out[currency_symbol] = (price <= 0.0 ? 0.0 : price);
+            {
+                for (rapidjson::SizeType i = 0; i < e.Size(); i++)
+                {
+                    if (!e[i].IsObject()) continue;
+                    Value v = e[i].GetObject();
 
+                    if (!v.HasMember("regularMarketPrice") || !v["regularMarketPrice"].IsFloat())
+                        continue;
+                    auto price = v["regularMarketPrice"].GetFloat();
+
+                    if (!v.HasMember("symbol") || !v["symbol"].IsString())
+                        continue;
+                    const auto symbol = wxString::FromUTF8(v["symbol"].GetString());
+
+                    if (!v.HasMember("currency") || !v["currency"].IsString())
+                        continue;
+                    const auto currency = wxString::FromUTF8(v["currency"].GetString());
+                    double k = currency == "GBp" ? 100 : 1;
+
+                    wxLogDebug("item: %u %s %f", i, symbol, price);
+                    out[symbol] = price <= 0 ? 0 : price / k;
+                }
+            }
+        }
+        else {
+            output = _("JSON Parse Error");
+            return false;
         }
     }
     else
     {
-        for (rapidjson::SizeType i = 0; i < e.Size(); i++)
-        {
-            if (!e[i].IsObject()) continue;
-            Value v = e[i].GetObject();
-
-            if (!v.HasMember("regularMarketPrice") || !v["regularMarketPrice"].IsFloat())
-                continue;
-            auto price = v["regularMarketPrice"].GetFloat();
-
-            if (!v.HasMember("symbol") || !v["symbol"].IsString())
-                continue;
-            const auto symbol = wxString::FromUTF8(v["symbol"].GetString());
-
-            if (!v.HasMember("currency") || !v["currency"].IsString())
-                continue;
-            const auto currency = wxString::FromUTF8(v["currency"].GetString());
-            double k = currency == "GBp" ? 100 : 1;
-
-            wxLogDebug("item: %u %s %f", i, symbol, price);
-            out[symbol] = price <= 0 ? 0 : price / k;
-        }
+        output = _("JSON Parse Error");
+        return false;
     }
 
     for (auto& item : out)
@@ -1191,6 +1208,7 @@ CURLcode http_get_data(const wxString& sSite, wxString& sOutput, const wxString&
     curl_set_writedata_options(curl, chunk);
 
     curl_easy_setopt(curl, CURLOPT_URL, static_cast<const char*>(sSite.mb_str()));
+    //curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L); //#5870
 
     CURLcode err_code = curl_easy_perform(curl);
     if (err_code == CURLE_OK)
@@ -1268,6 +1286,117 @@ CURLcode http_download_file(const wxString& sSite, const wxString& sPath)
     return err_code;
 }
 
+CURLcode getYahooFinanceQuotes(const wxString& URL, wxString& output) {
+    CURL* curl = curl_easy_init();
+    if (!curl) return CURLE_FAILED_INIT;
+
+    struct curlBuff cookie{nullptr, 0};
+    struct curlBuff crumb{nullptr, 0};
+    struct curlBuff quote{nullptr, 0};
+
+    wxString savedCookie = Model_Setting::instance().GetStringSetting("YAHOO_FINANCE_COOKIE", "");
+    wxString savedCrumb = Model_Setting::instance().GetStringSetting("YAHOO_FINANCE_CRUMB", "");
+
+    // Request to get cookies and save them to the cookie buffer
+    curl_set_common_options(curl);
+    curl_set_writedata_options(curl, quote);
+    wxString crumb_url = URL + "&crumb=" + savedCrumb;
+    curl_easy_setopt(curl, CURLOPT_URL, static_cast<const char*>(crumb_url.mb_str()));
+    curl_easy_setopt(curl, CURLOPT_COOKIEJAR, "");
+
+    struct curl_slist* headers = nullptr;
+    headers = curl_slist_append(headers, "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8");
+    if (!savedCookie.IsEmpty()) headers = curl_slist_append(headers, static_cast<const char*>(("Cookie: " + savedCookie).mb_str()));
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
+    CURLcode res = CURLE_OK;
+    if(!savedCookie.IsEmpty() && !savedCrumb.IsEmpty())
+        res = curl_easy_perform(curl);
+    if (res == CURLE_OK) {
+        if (wxString::FromUTF8(quote.memory).Contains("Unauthorized") || savedCookie.IsEmpty() || savedCrumb.IsEmpty())
+        {
+            curl_set_writedata_options(curl, cookie);
+            curl_easy_setopt(curl, CURLOPT_URL, "https://finance.yahoo.com");
+            res = curl_easy_perform(curl);
+            if (res == CURLE_OK)
+            {
+                wxString response = wxString::FromUTF8(cookie.memory);
+                wxRegEx csrfTokenPattern("csrfToken\" value=\"([^\"]+)\">");
+                if (csrfTokenPattern.Matches(response))
+                {
+                    // Get the csrfToken
+                    wxString csrfToken = csrfTokenPattern.GetMatch(response, 1);
+
+                    wxRegEx sessionIdPattern("sessionId\" value=\"([^\"]+)\">");
+                    if (sessionIdPattern.Matches(response))
+                    {
+                        wxString sessionId = sessionIdPattern.GetMatch(response, 1);
+
+                        wxString postData = "csrfToken=" + csrfToken + "&sessionId=" + sessionId + "&originalDoneUrl=https%3A%2F%2Ffinance.yahoo.com%2F%3Fguccounter%3D1&namespace=yahoo&reject=reject&reject=reject";
+                        curl_easy_setopt(curl, CURLOPT_URL, static_cast<const char*>(("https://consent.yahoo.com/v2/collectConsent?sessionId=" + sessionId).mb_str()));
+                        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, static_cast<const char*>(postData.mb_str()));
+                        res = curl_easy_perform(curl);
+                        curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
+                    }
+                }
+
+                if (res == CURLE_OK) {
+                    // Request to get crumb using the saved cookies
+                    curl_set_writedata_options(curl, crumb);
+                    curl_easy_setopt(curl, CURLOPT_URL, "https://query1.finance.yahoo.com/v1/test/getcrumb");
+                    res = curl_easy_perform(curl);
+                    if (res == CURLE_OK) {
+                        struct curlBuff newQuote { nullptr, 0 };
+                        // Request to get the quotes using the crumb and saved cookies
+                        curl_set_writedata_options(curl, newQuote);
+                        crumb_url = URL + "&crumb=" + wxString::FromUTF8(crumb.memory);
+                        curl_easy_setopt(curl, CURLOPT_URL, static_cast<const char*>(crumb_url.mb_str()));
+                        res = curl_easy_perform(curl);
+                        if (res == CURLE_OK) {
+                            output = wxString::FromUTF8(newQuote.memory);
+                            wxString cookieJar;
+                            // Get the cookies from the cookie jar
+                            struct curl_slist* cookies = nullptr;
+                            curl_easy_getinfo(curl, CURLINFO_COOKIELIST, &cookies);
+                            if (cookies) {
+                                for (struct curl_slist* item = cookies; item; item = item->next) {
+                                    wxStringTokenizer tokenizer(wxString::FromUTF8(item->data), "\t");
+                                    int count = 0;
+                                    while (tokenizer.HasMoreTokens()) {
+                                        wxString token = tokenizer.GetNextToken();
+                                        if (count++ < 5) continue;
+                                        cookieJar += token;
+                                        (count < 7) ? cookieJar += "=" : cookieJar += "; ";
+                                    }
+                                }
+                                curl_slist_free_all(cookies);
+                            }
+
+                            Model_Setting::instance().Set("YAHOO_FINANCE_COOKIE", cookieJar);
+                            Model_Setting::instance().Set("YAHOO_FINANCE_CRUMB", wxString::FromUTF8(crumb.memory));
+                        }
+                        free(newQuote.memory);
+                    }
+                }
+            }
+        }
+        else {
+            output = wxString::FromUTF8(quote.memory);
+        }
+    }
+    if (res != CURLE_OK) {
+        output = curl_easy_strerror(res); //TODO: translation
+        wxLogDebug("http_get_data: URL = %s error = %s", URL, output);
+    }
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+    free(cookie.memory);
+    free(crumb.memory);
+    free(quote.memory);
+    return res;
+
+}
+
 const wxString getProgramDescription(int type)
 {
     const wxString bull = L" \u2022 ";
@@ -1284,7 +1413,7 @@ const wxString getProgramDescription(int type)
 
     wxString description;
     description << bull << wxString::Format(simple ? "Version: %s" : _("Version: %s"), mmex::getTitleProgramVersion()) << eol
-        << bull << wxString::Format(simple ? "Built: %s %s" : _("Built on: %s %s"), build_date, BUILD_TIME) << eol
+        << bull << wxString::Format(simple ? "Built: %1$s %2$s" : _("Built on: %1$s %2$s"), build_date, BUILD_TIME) << eol
         << bull << wxString::Format(simple ? "db %d" : _("Database version: %d"), mmex::version::getDbLatestVersion())
 #if WXSQLITE3_HAVE_CODEC
         << " (" << wxSQLite3Cipher::GetCipherName(wxSQLite3Cipher::GetGlobalCipherDefault()) << ")"
@@ -1292,7 +1421,7 @@ const wxString getProgramDescription(int type)
         << eol
 
 #ifdef GIT_COMMIT_HASH
-        << bull << wxString::Format(simple ? "git %s (%s)" : _("Git commit: %s (%s)"), GIT_COMMIT_HASH, GIT_COMMIT_DATE) << eol
+        << bull << wxString::Format(simple ? "git %1$s (%2$s)" : _("Git commit: %1$s (%2$s)"), GIT_COMMIT_HASH, GIT_COMMIT_DATE) << eol
 #endif
 #ifdef GIT_BRANCH
         << bull << wxString::Format(simple ? "%s" : _("Git branch: %s"), GIT_BRANCH) << eol
@@ -1584,9 +1713,13 @@ const wxString md2html(const wxString& md)
     wxString body = md;
     // ---- Convert Markup
 
+    wxRegEx re(R"(https:\/\/github\.com\/moneymanagerex\/moneymanagerex\/milestone\/(\d+)\?closed=1)", wxRE_EXTENDED);
+    re.Replace(&body, R"(<a href="https://github.com/moneymanagerex/moneymanagerex/milestone/\1?closed=1" target="_blank">The complete list of closed issues is available at this link</a>)");
+    body.Replace("The complete list of closed issues is available at this link", _("The complete list of closed issues is available at this link"));
+
     // img with link
     // skip images hosted via unsupported https
-    wxRegEx re(R"(\[!\[([^]]+)\]\(([ \t]*https:\/\/[^)]+)\)\]\(([^)]+)\))", wxRE_EXTENDED);
+    re.Compile(R"(\[!\[([^]]+)\]\(([ \t]*https:\/\/[^)]+)\)\]\(([^)]+)\))", wxRE_EXTENDED);
     re.Replace(&body, R"(<a href="\3" target="_blank">\1</a>)");
     re.Compile(R"(\[!\[([^]]+)\]\(([^)]+)\)\]\(([^)]+)\))", wxRE_EXTENDED);
     re.Replace(&body, R"(<a href="\3" target="_blank"><img src="\2" alt="\1"></a>)");
@@ -1606,7 +1739,7 @@ const wxString md2html(const wxString& md)
     re.Compile(R"(#([0-9]{4,5}))", wxRE_EXTENDED);
     re.Replace(&body, R"(<a href="https://github.com/moneymanagerex/moneymanagerex/issues/\1" target="_blank">#\1</a>)");
 
-    body.Replace("\n", "\n<p>");
+    body.Replace("\n", "\n<br>");
 
     return body;
 }
@@ -1695,7 +1828,7 @@ void mmSetSize(wxWindow* w)
     else if (name == "mmPayeeDialog") {
         my_size = Model_Infotable::instance().GetSizeSetting("PAYEES_DIALOG_SIZE");
     }
-    else if (name == "Currency Dialog") {
+    else if (name == "Organize Currencies") {
         my_size = Model_Infotable::instance().GetSizeSetting("CURRENCY_DIALOG_SIZE");
     }
     else if (name == "Themes Dialog") {
@@ -1713,14 +1846,23 @@ void mmSetSize(wxWindow* w)
     else if (name == "Transactions Dialog") {
         my_size = Model_Infotable::instance().GetSizeSetting("TRANSACTION_DIALOG_SIZE");
     }
-    else if (name == "Relocate Categories") {
+    else if (name == "Merge categories") {
         my_size = Model_Infotable::instance().GetSizeSetting("RELOCATECATEG_DIALOG_SIZE");
     }
-    else if (name == "Relocate Payees") {
+    else if (name == "Merge payees") {
         my_size = Model_Infotable::instance().GetSizeSetting("RELOCATEPAYEE_DIALOG_SIZE");
     }
     else if (name == "Recurring Transaction Dialog") {
         my_size = Model_Infotable::instance().GetSizeSetting("RECURRINGTRANS_DIALOG_SIZE");
+    }
+    else if (name == "Transaction Filter") {
+        my_size = Model_Infotable::instance().GetSizeSetting("TRANSACTION_FILTER_SIZE");
+    }
+    else if (name == "Organize Tags") {
+        my_size = Model_Infotable::instance().GetSizeSetting("TAG_DIALOG_SIZE");
+    }
+    else if (name == "Merge tags") {
+        my_size = Model_Infotable::instance().GetSizeSetting("RELOCATETAG_DIALOG_SIZE");
     }
 
     wxSharedPtr<wxDisplay> display(new wxDisplay(w->GetParent()));

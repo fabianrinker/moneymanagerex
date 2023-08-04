@@ -126,10 +126,21 @@ inline int mmTreeItemData::getData() const { return id_; }
 inline const wxString mmTreeItemData::getString() const { return stringData_; }
 inline mmPrintableBase* mmTreeItemData::get_report() const { return report_.get(); }
 inline int mmTreeItemData::getType() const { return type_; }
+inline bool operator==(const mmTreeItemData& lhs, const mmTreeItemData& rhs)
+{
+    return (lhs.getData() == rhs.getData() &&
+        lhs.getString() == rhs.getString() &&
+        lhs.getType() == rhs.getType());
+};
 
 //----------------------------------------------------------------------------
 
 int CaseInsensitiveCmp(const wxString &s1, const wxString &s2);
+struct caseInsensitiveComparator {
+    bool operator()(const wxString& lhs, const wxString& rhs) const {
+        return lhs.CmpNoCase(rhs) < 0;
+    }
+};
 int CaseInsensitiveLocaleCmp(const wxString &s1, const wxString &s2);
 const wxString inQuotes(const wxString& label, const wxString& delimiter);
 void csv2tab_separated_values(wxString& line, const wxString& delimit);
@@ -198,6 +209,7 @@ inline const wxString mmGetMonthName(wxDateTime::Month month) { return MONTHS[st
 CURLcode http_get_data(const wxString& site, wxString& output, const wxString& useragent = wxEmptyString);
 CURLcode http_post_data(const wxString& site, const wxString& data, const wxString& contentType, wxString& output);
 CURLcode http_download_file(const wxString& site, const wxString& path);
+CURLcode getYahooFinanceQuotes(const wxString& URL, wxString& json_data);
 
 //----------------------------------------------------------------------------
 

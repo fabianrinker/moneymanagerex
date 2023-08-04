@@ -140,6 +140,7 @@ private:
         wxString Notes;
         bool valid = true;
         wxString PayeeMatchNotes;
+        std::map<int, wxString> customFieldData;
     };
 private:
     EDialogType dialogType_;
@@ -148,7 +149,7 @@ private:
     wxString delimit_ = ",";
     wxString decimal_;
 
-    std::vector<int> csvFieldOrder_;
+    std::vector < std::pair <int, int>> csvFieldOrder_;
     wxListBox* csvFieldCandicate_ = nullptr;
     wxListBox* csvListBox_ = nullptr;
 
@@ -184,9 +185,9 @@ private:
     int m_object_in_focus;
     bool m_reverce_sign = false;
     wxString depositType_;
-    std::unordered_map <wxString, std::tuple<int, wxString, wxString>> m_CSVpayeeNames;
+    std::map <wxString, std::tuple<int, wxString, wxString>, caseInsensitiveComparator> m_CSVpayeeNames;
     wxArrayString m_payee_names;
-    std::unordered_map <wxString, int> m_CSVcategoryNames;
+    std::map <wxString, int, caseInsensitiveComparator> m_CSVcategoryNames;
     std::map<std::pair <int, wxString>, std::map<int, std::pair<wxString, wxRegEx>> > payeeMatchPatterns_;
     bool payeeRegExInitialized_;
     wxCheckBox* payeeMatchCheckBox_ = nullptr;
@@ -207,7 +208,7 @@ private:
     /// Creates the controls and sizers
     void CreateControls();
     void OnAdd(wxCommandEvent& event);
-    bool validateData(tran_holder & holder);
+    bool validateData(tran_holder & holder, wxString& message);
     void OnImport(wxCommandEvent& event);
     void OnExport(wxCommandEvent& event);
     void OnRemove(wxCommandEvent& event);
@@ -221,6 +222,7 @@ private:
     void OnButtonClearClick(wxCommandEvent& event);
     void OnFileBrowse(wxCommandEvent& event);
     void OnListBox(wxCommandEvent& event);
+    void OnColumnResize(wxListEvent& event);
     void OnDelimiterChange(wxCommandEvent& event);
     void OnDecimalChange(wxCommandEvent& event);
     void OnButtonClear(wxCommandEvent& event);
@@ -234,6 +236,7 @@ private:
     void OnShowPayeeDialog(wxMouseEvent& event);
     void OnShowCategDialog(wxMouseEvent& event);
     void saveAccountPresets();
+    bool validateCustomFieldData(int fieldId, wxString& value, wxString& log_message);
 private:
     void OnLoad();
     void UpdateListItemBackground();

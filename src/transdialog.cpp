@@ -92,22 +92,11 @@ mmTransDialog::mmTransDialog(wxWindow* parent
     , double current_balance
     , bool duplicate
     , int type
-    , const wxString& name
-) : m_transfer(false)
-, m_duplicate(duplicate)
-, m_advanced(false)
+    ) : m_duplicate(duplicate)
 , m_current_balance(current_balance)
 , m_account_id(account_id)
-, skip_date_init_(false)
-, skip_account_init_(false)
-, skip_amount_init_(false)
-, skip_payee_init_(false)
-, skip_status_init_(false)
-, skip_notes_init_(false)
-, skip_category_init_(false)
-, skip_tooltips_init_(false)
 {
-
+    SetEvtHandlerEnabled(false);
     Model_Checking::Data *transaction = Model_Checking::instance().get(transaction_id);
     m_new_trx = (transaction || m_duplicate) ? false : true;
     m_transfer = m_new_trx ? type == Model_Checking::TRANSFER : Model_Checking::is_transfer(transaction);
@@ -120,8 +109,14 @@ mmTransDialog::mmTransDialog(wxWindow* parent
     {
         Model_Checking::getTransactionData(m_trx_data, transaction);
         const auto s = Model_Checking::splittransaction(transaction);
+        const wxString& splitRefType = Model_Attachment::reftype_desc(Model_Attachment::TRANSACTIONSPLIT);
         for (const auto& item : s)
-            m_local_splits.push_back({ item.CATEGID, item.SPLITTRANSAMOUNT, item.NOTES });
+        {
+            wxArrayInt tags;
+            for (const auto& tag : Model_Taglink::instance().find(Model_Taglink::REFTYPE(splitRefType), Model_Taglink::REFID(item.SPLITTRANSID)))
+                tags.Add(tag.TAGID);
+            m_local_splits.push_back({ item.CATEGID, item.SPLITTRANSAMOUNT, tags, item.NOTES });
+        }
 
         if (m_duplicate && !Model_Setting::instance().GetBoolSetting(INIDB_USE_ORG_DATE_DUPLICATE, false))
         {
@@ -150,15 +145,19 @@ mmTransDialog::mmTransDialog(wxWindow* parent
 
     mmSetSize(this);
     // set the initial dialog size to expand the payee and category comboboxes to fit their text
-    int minWidth = std::max(cbPayee_->GetSize().GetX(),
-        cbPayee_->GetSizeFromTextSize(cbPayee_->GetTextExtent(cbPayee_->GetValue()).GetX()).GetX()) - cbPayee_->GetSize().GetWidth();
+    int minWidth = std::max(0,
+        cbPayee_->GetSizeFromText(cbPayee_->GetValue()).GetWidth() - 2 * cbPayee_->GetMinWidth());
     minWidth = std::max(minWidth,
-        cbCategory_->GetSizeFromTextSize(cbCategory_->GetTextExtent(cbCategory_->GetValue()).GetX()).GetX() - cbCategory_->GetSize().GetWidth());
-    wxSize size = wxSize(GetMinWidth() + minWidth + (m_custom_fields->IsCustomPanelShown() ? m_custom_fields->GetMinWidth() : 0), GetMinHeight());
-    if (size.GetWidth() > GetSize().GetWidth()) SetSize(size);
-    if (m_custom_fields->IsCustomPanelShown())
+        cbCategory_->GetSizeFromText(cbCategory_->GetValue()).GetWidth() - 2 * cbCategory_->GetMinWidth());
+
+    int custom_fields_width = m_custom_fields->IsCustomPanelShown() ? m_custom_fields->GetMinWidth() : 0;
+    wxSize size = wxSize(GetMinWidth() + minWidth + custom_fields_width, GetSize().GetHeight());
+    if (size.GetWidth() > GetSize().GetWidth())
+        SetSize(size);
+    if (custom_fields_width)
         SetMinSize(wxSize(GetMinWidth() + m_custom_fields->GetMinWidth(), GetMinHeight()));
     Centre();
+    SetEvtHandlerEnabled(true);
 }
 
 bool mmTransDialog::Create(wxWindow* parent, wxWindowID id, const wxString& caption
@@ -187,7 +186,6 @@ bool mmTransDialog::Create(wxWindow* parent, wxWindowID id, const wxString& capt
 
     SetEventHandlers();
     SetEvtHandlerEnabled(true);
-
     return TRUE;
 }
 
@@ -324,7 +322,7 @@ void mmTransDialog::dataToControls()
     cbToAccount_->Show(m_transfer);
     Layout();
 
-    bool has_split = !m_local_splits.empty();
+    bool has_split = !(m_local_splits.size() <= 1);
     if (!skip_category_init_)
     {
         bSplit_->UnsetToolTip();
@@ -355,9 +353,21 @@ void mmTransDialog::dataToControls()
         skip_category_init_ = true;
     }
 
-    m_textAmount->Enable(m_local_splits.empty());
+    m_textAmount->Enable(!has_split);
     cbCategory_->Enable(!has_split);
     bSplit_->Enable(!m_transfer);
+
+    // Tags
+    if (!skip_tag_init_)
+    {
+        wxArrayInt tagIds;
+        for (const auto& tag : Model_Taglink::instance().find(
+            Model_Taglink::REFTYPE(Model_Attachment::reftype_desc(Model_Attachment::TRANSACTION)),
+            Model_Taglink::REFID(m_trx_data.TRANSID)))
+            tagIds.Add(tag.TAGID);
+        tagTextCtrl_->SetTags(tagIds);
+        skip_tag_init_ = true;
+    }
 
     if (!skip_notes_init_) //Notes & Transaction Number
     {
@@ -380,6 +390,7 @@ void mmTransDialog::dataToControls()
         cAdvanced_->Enable(false);
         cbPayee_->Enable(false);
         cbCategory_->Enable(false);
+        tagTextCtrl_->Enable(false);
         bSplit_->Enable(false);
         bAuto->Enable(false);
         textNumber_->Enable(false);
@@ -454,10 +465,10 @@ void mmTransDialog::CreateControls()
     // Amount Fields --------------------------------------------
     m_textAmount = new mmTextCtrl(this, mmID_TEXTAMOUNT, ""
         , wxDefaultPosition, wxDefaultSize, wxALIGN_RIGHT | wxTE_PROCESS_ENTER, mmCalcValidator());
-
+    m_textAmount->SetMinSize(m_textAmount->GetSize());
     toTextAmount_ = new mmTextCtrl( this, mmID_TOTEXTAMOUNT, ""
         , wxDefaultPosition, wxDefaultSize, wxALIGN_RIGHT | wxTE_PROCESS_ENTER, mmCalcValidator());
-
+    toTextAmount_->SetMinSize(toTextAmount_->GetSize());
     wxBoxSizer* amountSizer = new wxBoxSizer(wxHORIZONTAL);
     amountSizer->Add(m_textAmount, g_flagsExpand);
     amountSizer->Add(toTextAmount_, g_flagsExpand);
@@ -512,6 +523,13 @@ void mmTransDialog::CreateControls()
     flex_sizer->Add(cbCategory_, g_flagsExpand);
     flex_sizer->Add(bSplit_, g_flagsH);
 
+    // Tags  ---------------------------------------------
+    tagTextCtrl_ = new mmTagTextCtrl(this, ID_DIALOG_TRANS_TAGS);
+    wxStaticText* tagLabel = new wxStaticText(this, wxID_STATIC, _("Tags"));
+    flex_sizer->Add(tagLabel, g_flagsH);
+    flex_sizer->Add(tagTextCtrl_, g_flagsExpand);
+    flex_sizer->AddSpacer(1);
+
     // Number  ---------------------------------------------
 
     textNumber_ = new wxTextCtrl(this, ID_DIALOG_TRANS_TEXTNUMBER, "", wxDefaultPosition, wxDefaultSize);
@@ -535,7 +553,7 @@ void mmTransDialog::CreateControls()
     // Colours
     bColours_ = new mmColorButton(this, wxID_LOWEST, bAuto->GetSize());
     mmToolTip(bColours_, _("User Colors"));
-    bColours_->SetBackgroundColor(m_trx_data.FOLLOWUPID);
+    bColours_->SetBackgroundColor(m_trx_data.COLOR);
 
     // Attachments
     bAttachments_ = new wxBitmapButton(this, wxID_FILE, mmBitmapBundle(png::CLIP, mmBitmapButtonSize));
@@ -594,16 +612,21 @@ void mmTransDialog::CreateControls()
     }
 
     this->SetSizerAndFit(box_sizer);
-    min_size_ = GetMinSize();
-    box_sizer3->SetMinSize(box_sizer2->GetMinSize());
-    m_custom_fields->SetMinSize(box_sizer2->GetMinSize());
+    wxSize panelSize = box_sizer2->GetMinSize();
+    min_size_ = wxSize(panelSize.GetWidth() + 20, panelSize.GetHeight());
+    SetMinSize(min_size_);
+    box_sizer3->SetMinSize(panelSize);
+    m_custom_fields->SetMinSize(panelSize);
 }
 
 bool mmTransDialog::ValidateData()
 {
     if (!m_textAmount->checkValue(m_trx_data.TRANSAMOUNT))
         return false;
-
+    if (!tagTextCtrl_->IsValid()) {
+        mmErrorDialogs::ToolTip4Object(tagTextCtrl_, _("Invalid value"), _("Tags"), wxICON_ERROR);
+        return false;
+    }
     if (!cbAccount_->mmIsValid()) {
         mmErrorDialogs::ToolTip4Object(cbAccount_, _("Invalid value"), _("Account"), wxICON_ERROR);
         return false;
@@ -748,9 +771,9 @@ bool mmTransDialog::ValidateData()
 
     int color_id = bColours_->GetColorId();
     if (color_id > 0 && color_id < 8)
-        m_trx_data.FOLLOWUPID = color_id;
+        m_trx_data.COLOR = color_id;
     else
-        m_trx_data.FOLLOWUPID = -1;
+        m_trx_data.COLOR = -1;
 
     return true;
 }
@@ -1022,6 +1045,8 @@ void mmTransDialog::OnCategs(wxCommandEvent& WXUNUSED(event))
         Split s;
         s.SPLITTRANSAMOUNT = m_trx_data.TRANSAMOUNT;
         s.CATEGID = cbCategory_->mmGetCategoryId();
+        tagTextCtrl_->Validate();
+        s.TAGS = tagTextCtrl_->GetTagIDs();
         s.NOTES = textNotes_->GetValue();
         m_local_splits.push_back(s);
     }
@@ -1041,6 +1066,11 @@ void mmTransDialog::OnCategs(wxCommandEvent& WXUNUSED(event))
             m_trx_data.TRANSAMOUNT = m_local_splits[0].SPLITTRANSAMOUNT;
             textNotes_->SetValue(m_local_splits[0].NOTES);
             m_textAmount->SetValue(m_trx_data.TRANSAMOUNT);
+            tagTextCtrl_->Clear();
+            wxString tagnames;
+            for (const auto& tag : m_local_splits[0].TAGS)
+                tagnames.Append(Model_Tag::instance().get(tag)->TAGNAME + " ");
+            tagTextCtrl_->SetText(tagnames);
             m_local_splits.clear();
         }
 
@@ -1053,6 +1083,7 @@ void mmTransDialog::OnCategs(wxCommandEvent& WXUNUSED(event))
         skip_tooltips_init_ = false;
         dataToControls();
     }
+    tagTextCtrl_->Reinitialize();
 }
 
 void mmTransDialog::OnAttachments(wxCommandEvent& WXUNUSED(event))
@@ -1158,6 +1189,22 @@ void mmTransDialog::OnOk(wxCommandEvent& WXUNUSED(event))
     }
     Model_Splittransaction::instance().update(splt, m_trx_data.TRANSID);
 
+    // Save split tags
+    const wxString& splitRefType = Model_Attachment::reftype_desc(Model_Attachment::TRANSACTIONSPLIT);
+
+    for (int i = 0; i < m_local_splits.size(); i++)
+    {
+        Model_Taglink::Data_Set splitTaglinks;
+        for (const auto& tagId : m_local_splits.at(i).TAGS)
+        {
+            Model_Taglink::Data* t = Model_Taglink::instance().create();
+            t->REFTYPE = splitRefType;
+            t->REFID = splt.at(i).SPLITTRANSID;
+            t->TAGID = tagId;
+            splitTaglinks.push_back(*t);
+        }
+        Model_Taglink::instance().update(splitTaglinks, splitRefType, splt.at(i).SPLITTRANSID);
+    }
     const wxString& RefType = Model_Attachment::reftype_desc(Model_Attachment::TRANSACTION);
     if (m_new_trx || m_duplicate)
     {
@@ -1165,6 +1212,18 @@ void mmTransDialog::OnOk(wxCommandEvent& WXUNUSED(event))
     }
 
     m_custom_fields->SaveCustomValues(m_trx_data.TRANSID);
+
+    // Save base transaction tags
+    Model_Taglink::Data_Set taglinks;
+    for (const auto& tagId : tagTextCtrl_->GetTagIDs())
+    {
+        Model_Taglink::Data* t = Model_Taglink::instance().create();
+        t->REFTYPE = RefType;
+        t->REFID = m_trx_data.TRANSID;
+        t->TAGID = tagId;
+        taglinks.push_back(*t);
+    }
+    Model_Taglink::instance().update(taglinks, RefType, m_trx_data.TRANSID);
 
     const Model_Checking::Data& tran(*r);
     Model_Checking::Full_Data trx(tran);

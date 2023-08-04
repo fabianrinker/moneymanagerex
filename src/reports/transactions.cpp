@@ -193,12 +193,13 @@ table {
             if (showColumnById(5)) hb.addTableHeaderCell(_("Payee"), "Payee");
             if (showColumnById(6)) hb.addTableHeaderCell(_("Status"), "Status text-center");
             if (showColumnById(7)) hb.addTableHeaderCell(_("Category"), "Category");
-            if (showColumnById(8)) hb.addTableHeaderCell(_("Type"), "Type");
-            if (showColumnById(9)) hb.addTableHeaderCell(_("Amount"), "Amount text-right");
-            if (showColumnById(10)) hb.addTableHeaderCell(_("Rate"), "Rate text-right");
-            if (showColumnById(11)) hb.addTableHeaderCell(_("Notes"), "Notes");
+            if (showColumnById(8)) hb.addTableHeaderCell(_("Tags"), "Tags");
+            if (showColumnById(9)) hb.addTableHeaderCell(_("Type"), "Type");
+            if (showColumnById(10)) hb.addTableHeaderCell(_("Amount"), "Amount text-right");
+            if (showColumnById(11)) hb.addTableHeaderCell(_("Rate"), "Rate text-right");
+            if (showColumnById(12)) hb.addTableHeaderCell(_("Notes"), "Notes");
             const auto& ref_type = Model_Attachment::reftype_desc(Model_Attachment::TRANSACTION);
-            int colNo = 12;
+            int colNo = 13;
             for (const auto& udfc_entry : Model_CustomField::UDFC_FIELDS())
             {
                 if (udfc_entry.empty()) continue;
@@ -244,7 +245,7 @@ table {
                     hb.addTableCellLink(wxString::Format("trx:%d", transaction.TRANSID)
                         , transaction.displayID, true);
                 }
-                if (showColumnById(1)) hb.addColorMarker(getUDColour(transaction.FOLLOWUPID).GetAsString(), true);
+                if (showColumnById(1)) hb.addColorMarker(getUDColour(transaction.COLOR).GetAsString(), true);
                 if (showColumnById(2)) hb.addTableCellDate(transaction.TRANSDATE);
                 if (showColumnById(3)) hb.addTableCell(transaction.TRANSACTIONNUMBER);
                 if (showColumnById(4)) {
@@ -254,7 +255,9 @@ table {
                 if (showColumnById(5)) hb.addTableCell(noOfTrans ? "< " + transaction.ACCOUNTNAME : transaction.PAYEENAME);
                 if (showColumnById(6)) hb.addTableCell(transaction.STATUS, false, true);
                 if (showColumnById(7)) hb.addTableCell(transaction.CATEGNAME);
-                if (showColumnById(8))
+                // Tags
+                if (showColumnById(8)) hb.addTableCell(transaction.TAGNAMES);
+                if (showColumnById(9))
                 {
                     if (Model_Checking::foreignTransactionAsTransfer(transaction))
                         hb.addTableCell("< " + wxGetTranslation(transaction.TRANSCODE));
@@ -272,7 +275,7 @@ table {
                     if (noOfTrans || (!allAccounts && (selected_accounts.Index(transaction.ACCOUNTID) == wxNOT_FOUND)))
                         amount = -amount;
                     const double convRate = Model_CurrencyHistory::getDayRate(curr->CURRENCYID, transaction.TRANSDATE);
-                    if (showColumnById(9))
+                    if (showColumnById(10))
                         if (Model_Checking::status(transaction.STATUS) == Model_Checking::VOID_)
                             hb.addCurrencyCell(Model_Checking::amount(transaction, acc->ACCOUNTID), curr, -1, true);                            
                         else if (transaction.DELETEDTIME.IsEmpty())
@@ -290,11 +293,11 @@ table {
                 else
                 {
                     wxFAIL_MSG("account for transaction not found");
-                    if (showColumnById(9)) hb.addEmptyTableCell();
+                    if (showColumnById(10)) hb.addEmptyTableCell();
                 }
 
                 // Exchange Rate
-                if (showColumnById(10))
+                if (showColumnById(11))
                 {
                     if ((Model_Checking::type(transaction) == Model_Checking::TRANSFER)
                             && (transaction.TRANSAMOUNT != transaction.TOTRANSAMOUNT))
@@ -312,7 +315,7 @@ table {
                 }
 
                 // Notes
-                if (showColumnById(11)) hb.addTableCell(AttachmentsLink + transaction.NOTES);
+                if (showColumnById(12)) hb.addTableCell(AttachmentsLink + transaction.NOTES);
 
                 // Custom Fields
 
@@ -356,15 +359,15 @@ table {
                     }
                 }
 
-                if (showColumnById(12))
-                    UDFCFormatHelper(UDFC01_Type, udfc01_ref_id, transaction.UDFC01, transaction.UDFC01_val, UDFC01_Scale);
                 if (showColumnById(13))
-                    UDFCFormatHelper(UDFC02_Type, udfc02_ref_id, transaction.UDFC02, transaction.UDFC02_val, UDFC02_Scale);
+                    UDFCFormatHelper(UDFC01_Type, udfc01_ref_id, transaction.UDFC01, transaction.UDFC01_val, UDFC01_Scale);
                 if (showColumnById(14))
-                    UDFCFormatHelper(UDFC03_Type, udfc03_ref_id, transaction.UDFC03, transaction.UDFC03_val, UDFC03_Scale);
+                    UDFCFormatHelper(UDFC02_Type, udfc02_ref_id, transaction.UDFC02, transaction.UDFC02_val, UDFC02_Scale);
                 if (showColumnById(15))
-                    UDFCFormatHelper(UDFC04_Type, udfc04_ref_id, transaction.UDFC04, transaction.UDFC04_val, UDFC04_Scale);
+                    UDFCFormatHelper(UDFC03_Type, udfc03_ref_id, transaction.UDFC03, transaction.UDFC03_val, UDFC03_Scale);
                 if (showColumnById(16))
+                    UDFCFormatHelper(UDFC04_Type, udfc04_ref_id, transaction.UDFC04, transaction.UDFC04_val, UDFC04_Scale);
+                if (showColumnById(17))
                     UDFCFormatHelper(UDFC05_Type, udfc05_ref_id, transaction.UDFC05, transaction.UDFC05_val, UDFC05_Scale);
             }
             hb.endTableRow();
@@ -439,14 +442,21 @@ void mmReportTransactions::Run(wxSharedPtr<mmFilterTransactionsDialog>& dlg)
 {
     trans_.clear();
     const auto splits = Model_Splittransaction::instance().get_all();
+    const auto tags = Model_Taglink::instance().get_all(Model_Attachment::reftype_desc(Model_Attachment::TRANSACTION));
+    bool combine_splits = dlg.get()->mmIsCombineSplitsChecked();
+    const wxString splitRefType = Model_Attachment::reftype_desc(Model_Attachment::TRANSACTIONSPLIT);
     for (const auto& tran : Model_Checking::instance().all())
     {
-        Model_Checking::Full_Data full_tran(tran, splits);
+        Model_Checking::Full_Data full_tran(tran, splits, tags);
 
         full_tran.PAYEENAME = full_tran.real_payee_name(full_tran.ACCOUNTID);
         if (full_tran.has_split())
         {
+            Model_Checking::Full_Data single_tran = full_tran;
+            single_tran.TRANSAMOUNT = 0;
             int splitIndex = 1;
+            bool match = false;
+            wxString tranTagnames = full_tran.TAGNAMES;
             for (const auto& split : full_tran.m_splits)
             {
                 full_tran.displayID = (wxString::Format("%i", tran.TRANSID) + "." + wxString::Format("%i", splitIndex++));
@@ -454,14 +464,25 @@ void mmReportTransactions::Run(wxSharedPtr<mmFilterTransactionsDialog>& dlg)
                 full_tran.CATEGNAME = Model_Category::full_name(split.CATEGID);
                 full_tran.TRANSAMOUNT = split.SPLITTRANSAMOUNT;
                 full_tran.NOTES = tran.NOTES;
-                Model_Checking::Data split_tran = full_tran;
-                if (dlg.get()->mmIsRecordMatches<Model_Checking>(split_tran) ||
-                    dlg.get()->mmIsSplitMatches<Model_Splittransaction>(split))
+                full_tran.TAGNAMES = tranTagnames;
+                Model_Checking::Data splitWithTranData = full_tran;
+                if (dlg.get()->mmIsSplitRecordMatches<Model_Splittransaction>(split) ||
+                    dlg.get()->mmIsRecordMatches<Model_Checking>(splitWithTranData))
                 {
+                    match = true;
                     full_tran.NOTES.Append((tran.NOTES.IsEmpty() ? "" : " ") + split.NOTES);
-                    trans_.push_back(full_tran);
+
+                    wxString tagnames;
+                    for (const auto& tag : Model_Taglink::instance().get(splitRefType, split.SPLITTRANSID))
+                        tagnames.Append(tag.first + " ");
+                    if (!tagnames.IsEmpty())
+                        full_tran.TAGNAMES.Append((full_tran.TAGNAMES.IsEmpty() ? "" : ", ") + tagnames.Trim());
+
+                    if (!combine_splits) trans_.push_back(full_tran);
+                    else single_tran.TRANSAMOUNT += full_tran.TRANSAMOUNT;
                 }
             }
+            if (match && combine_splits) trans_.push_back(single_tran);
         }
         else if (dlg.get()->mmIsRecordMatches<Model_Checking>(tran)) trans_.push_back(full_tran);
     }

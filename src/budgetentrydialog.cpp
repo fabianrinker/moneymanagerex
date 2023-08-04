@@ -41,9 +41,6 @@ mmBudgetEntryDialog::mmBudgetEntryDialog(wxWindow* parent
     , const wxString& CategoryActual)
     : catEstimateAmountStr_(categoryEstimate)
     , catActualAmountStr_(CategoryActual)
-    , m_choiceItem()
-    , m_textAmount()
-    , m_choiceType()
 {
     budgetEntry_ = entry;
     long style = wxCAPTION | wxSYSTEM_MENU | wxCLOSE_BOX;
@@ -107,19 +104,11 @@ void mmBudgetEntryDialog::CreateControls()
     wxStaticText* itemTextActCatAmt = new wxStaticText(itemPanel7, wxID_STATIC, catActualAmountStr_);
     
     itemGridSizer2->Add(new wxStaticText(itemPanel7, wxID_STATIC, _("Category: ")), g_flagsH);
-    itemGridSizer2->Add(new wxStaticText(itemPanel7, wxID_STATIC, category->PARENTID > 0
-        ? Model_Category::instance().get(category->PARENTID)->CATEGNAME : category->CATEGNAME)
-        , wxSizerFlags(g_flagsH).Align(wxALIGN_RIGHT));
-    // only add the subcategory if it exists.
-    if (category->PARENTID >= 0) {
-        wxStaticText* itemTextSubCatTag = new wxStaticText(itemPanel7, wxID_STATIC
-            , _("Sub Category: "));
-        wxStaticText* itemTextSubCatName = new wxStaticText(itemPanel7, wxID_STATIC
-            , category->CATEGNAME);
-        
-        itemGridSizer2->Add(itemTextSubCatTag, g_flagsH);
-        itemGridSizer2->Add(itemTextSubCatName, wxSizerFlags(g_flagsH).Align(wxALIGN_RIGHT));
-    }
+    wxString categname = Model_Category::full_name(category);
+    wxStaticText* categNameLabel = new wxStaticText(itemPanel7, wxID_STATIC,
+        (categname.size() > 50 ? wxString::FromUTF8("\u2026") + categname.substr(categname.size() - 50) : categname));
+    if (categname.size() > 50) categNameLabel->SetToolTip(categname);
+    itemGridSizer2->Add(categNameLabel, wxSizerFlags(g_flagsH).Align(wxALIGN_RIGHT));
     itemGridSizer2->Add(new wxStaticText(itemPanel7, wxID_STATIC, _("Estimated:")), g_flagsH);
     itemGridSizer2->Add(itemTextEstCatAmt, wxSizerFlags(g_flagsH).Align(wxALIGN_RIGHT));
     itemGridSizer2->Add(new wxStaticText(itemPanel7, wxID_STATIC, _("Actual:")), g_flagsH);
